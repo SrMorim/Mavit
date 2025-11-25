@@ -1,0 +1,273 @@
+// Mavit Database Schema (SQLite Compatible)
+// Simplified version for development testing without PostgreSQL
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// User model - Core authentication and user data
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String
+  password  String   // Hashed with bcrypt
+  
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  lastLogin DateTime? @map("last_login")
+  
+  // Security & Privacy
+  isActive    Boolean @default(true) @map("is_active")
+  isVerified  Boolean @default(false) @map("is_verified")
+  
+  // E2E Encryption key (encrypted with master key)
+  encryptionKey String? @map("encryption_key")
+  
+  // Relationships to all modules
+  tasks         Task[]
+  events        Event[]
+  notes         Note[]
+  lists         List[]
+  transactions  Transaction[]
+  subscriptions Subscription[]
+  sessions      UserSession[]
+  
+  @@map("users")
+}
+
+// User session management for Zero-Trust architecture
+model UserSession {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  token       String   @unique
+  refreshToken String? @map("refresh_token")
+  ipAddress   String?  @map("ip_address")
+  userAgent   String?  @map("user_agent")
+  isValid     Boolean  @default(true) @map("is_valid")
+  expiresAt   DateTime @map("expires_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("user_sessions")
+}
+
+// BACKLOG MODULE - Task management similar to Azure DevOps
+model Task {
+  id          String     @id @default(uuid())
+  userId      String     @map("user_id")
+  title       String
+  description String?
+  priority    String     @default("MEDIUM") // LOW, MEDIUM, HIGH, URGENT
+  status      String     @default("TODO")   // TODO, IN_PROGRESS, REVIEW, DONE, CANCELLED
+  
+  // Dates and scheduling
+  dueDate     DateTime?  @map("due_date")
+  startDate   DateTime?  @map("start_date")
+  completedAt DateTime?  @map("completed_at")
+  
+  // Metadata (stored as JSON string)
+  tags        String?    @default("[]")  // JSON string array
+  estimatedHours Int?    @map("estimated_hours")
+  actualHours    Int?    @map("actual_hours")
+  
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  
+  // Relationships
+  user        User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  eventId     String? @map("event_id") // Sync with calendar
+  event       Event?  @relation(fields: [eventId], references: [id])
+  
+  @@map("tasks")
+}
+
+// CALENDAR MODULE - Events and reminders
+model Event {
+  id          String    @id @default(uuid())
+  userId      String    @map("user_id")
+  title       String
+  description String?
+  
+  // Date and time
+  startDate   DateTime  @map("start_date")
+  endDate     DateTime? @map("end_date")
+  allDay      Boolean   @default(false) @map("all_day")
+  
+  // Recurrence
+  isRecurring Boolean      @default(false) @map("is_recurring")
+  recurrence  String?      // DAILY, WEEKLY, MONTHLY, YEARLY, CUSTOM
+  
+  // Notifications (stored as JSON string)
+  reminders   String       @default("[15]") // JSON string array of minutes
+  
+  // Metadata
+  location    String?
+  color       String?      @default("#ef4444") // Red theme default
+  
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  
+  // Relationships
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tasks Task[] // Sync with backlog tasks
+  
+  @@map("events")
+}
+
+// BLOCO DE NOTAS MODULE - Rich text notes
+model Note {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  title       String
+  content     String   // Encrypted content
+  
+  // Organization (stored as JSON string for tags)
+  category    String?
+  tags        String   @default("[]") // JSON string array
+  isFavorite  Boolean  @default(false) @map("is_favorite")
+  isArchived  Boolean  @default(false) @map("is_archived")
+  
+  // Rich content metadata
+  hasImages   Boolean  @default(false) @map("has_images")
+  wordCount   Int?     @map("word_count")
+  
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  
+  // Relationships
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("notes")
+}
+
+// LISTAS MODULE - Simple task lists like Apple Reminders
+model List {
+  id          String     @id @default(uuid())
+  userId      String     @map("user_id")
+  name        String
+  description String?
+  color       String?    @default("#ef4444")
+  icon        String?
+  
+  // Settings
+  isShared    Boolean    @default(false) @map("is_shared")
+  isArchived  Boolean    @default(false) @map("is_archived")
+  
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  
+  // Relationships
+  user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items ListItem[]
+  
+  @@map("lists")
+}
+
+model ListItem {
+  id          String   @id @default(uuid())
+  listId      String   @map("list_id")
+  title       String
+  notes       String?
+  
+  // Status
+  isCompleted Boolean  @default(false) @map("is_completed")
+  completedAt DateTime? @map("completed_at")
+  
+  // Priority and organization
+  priority    String   @default("MEDIUM") // LOW, MEDIUM, HIGH, URGENT
+  order       Int      @default(0)
+  
+  // Due date
+  dueDate     DateTime? @map("due_date")
+  
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  
+  // Relationships
+  list List @relation(fields: [listId], references: [id], onDelete: Cascade)
+  
+  @@map("list_items")
+}
+
+// FINANÇAS MODULE - Financial tracking and insights
+model Transaction {
+  id          String            @id @default(uuid())
+  userId      String            @map("user_id")
+  
+  // Transaction details
+  title       String
+  description String?
+  amount      Float             // Using Float instead of Decimal for SQLite
+  type        String            // INCOME, EXPENSE
+  category    String
+  
+  // Date
+  date        DateTime          @default(now())
+  
+  // Payment method
+  account     String?
+  paymentMethod String?         @map("payment_method")
+  
+  // Metadata (stored as JSON string)
+  tags        String            @default("[]") // JSON string array
+  isRecurring Boolean           @default(false) @map("is_recurring")
+  
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  
+  // Relationships
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscriptionId String?        @map("subscription_id")
+  subscription   Subscription?  @relation(fields: [subscriptionId], references: [id])
+  
+  @@map("transactions")
+}
+
+// Subscriptions tracking for financial insights
+model Subscription {
+  id          String      @id @default(uuid())
+  userId      String      @map("user_id")
+  
+  // Subscription details
+  name        String
+  description String?
+  amount      Float       // Using Float instead of Decimal for SQLite
+  currency    String      @default("BRL")
+  
+  // Billing
+  billingCycle String          @map("billing_cycle") // WEEKLY, MONTHLY, QUARTERLY, YEARLY
+  nextBilling  DateTime        @map("next_billing")
+  startDate    DateTime        @map("start_date")
+  endDate      DateTime?       @map("end_date")
+  
+  // Status
+  isActive    Boolean     @default(true) @map("is_active")
+  category    String?
+  
+  // Metadata
+  website     String?
+  notes       String?
+  
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  
+  // Relationships
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+  
+  @@map("subscriptions")
+}
